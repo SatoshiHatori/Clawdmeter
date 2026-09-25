@@ -6,7 +6,7 @@ selected via PlatformIO's `build_src_filter`. Adding a board means dropping in
 a new folder + a new `[env:...]` block — `main.cpp`, `ui.cpp`, and `splash.cpp`
 never see board-specific code. See [`docs/porting/adding-a-board.md`](docs/porting/adding-a-board.md).
 
-Seven ports today (two SoC families, five panel sizes):
+Eight ports today (three SoC families, six panel sizes):
 
 - `boards/waveshare_amoled_216/` — original Waveshare ESP32-S3-Touch-AMOLED-2.16 (CO5300, 480×480 square, CST9220 touch, IMU rotation). Build env: `waveshare_amoled_216`.
 - `boards/waveshare_amoled_18/` — Waveshare ESP32-S3-Touch-AMOLED-1.8 (368×448 portrait, XCA9554 IO expander). Build env: `waveshare_amoled_18`. **Two panel revisions are auto-detected at boot** (`board_rev()` in `board_init.cpp`, enum in `board_rev.h`): original = SH8601 display + FT3168 touch (0x38); later = CO5300 display + CST816 touch (0x15). One binary drives both.
@@ -15,6 +15,7 @@ Seven ports today (two SoC families, five panel sizes):
 - `boards/waveshare_amoled_206/` — Waveshare ESP32-S3-Touch-AMOLED-2.06 (CO5300, 410×502 watch form factor, FT3168 touch, no IO expander, 32 MB flash, PCF85063 RTC, ES8311 codec). Build env: `waveshare_amoled_206`. Display, touch, battery, IMU init, and BLE verified on hardware; the ES8311 chime path is not wired up (`sound.cpp` no-ops).
 - `boards/waveshare_lcd_154/` — Waveshare ESP32-S3-Touch-LCD-1.54 (ST7789, 240×240 square, CST816T touch @ 0x15). Build env: `waveshare_lcd_154`. **The first non-AMOLED port**: a plain 4-wire SPI TFT, not QSPI, and the panel has no brightness command — backlight is LEDC PWM on `LCD_BL`. **No PMU**: battery is an ADC divider on GPIO1 and `BAT_EN` (GPIO2) is a power-hold line that must be driven HIGH early in `board_init()` or the board browns out on battery. Three buttons (BOOT + GPIO5 + a PWR-role GPIO4); ES8311 chime wired up; QMI8658 populated but unused (fixed orientation, no rotation).
 - `boards/waveshare_lcd_4/` — Waveshare ESP32-S3-Touch-LCD-4 (ST7701 RGB parallel, 480×480 square, GT911 touch). Build env: `waveshare_lcd_4`. **RGB-panel port**: Arduino_ESP32RGBPanel + bounce buffers (tearing fix). IO expander @ 0x24 (TCA9554 / CH32V003) must init before `gfx->begin()` or the panel stays dark; backlight is expander pin 2 (on/off only). No AXP2101 / IMU; KEY/PWR is hardware RST. Single BOOT button (GPIO 0 → Space/PTT).
+- `boards/m5stack_core_basic/` — M5Stack Core Basic / Gray (ILI9342C, 320×240 **landscape**, no touch). Build env: `m5stack_core_basic`. **First classic-ESP32 port**: no PSRAM (takes the C6's internal-SRAM / direct-draw splash path, `LV_USE_SNAPSHOT=0`), and Serial is a CP2104/CH9102 USB-UART (`/dev/ttyUSB0`, no `ARDUINO_USB_CDC_ON_BOOT`). **Not yet verified on hardware.**
 
 Plus one non-hardware target: `boards/sim/` — **native desktop simulator** (SDL2 window, 480×480, `platform = native`). Build env: `sim`. See "Desktop simulator" below.
 
@@ -72,6 +73,15 @@ ESP32-C6 sibling of the S3 1.8: same 368×448 SH8601 panel + FocalTech touch, di
 - No PMU / IMU. Buttons: GPIO 0 only (BOOT → Space/PTT). KEY/PWR is EN/RST (hardware reset). GPIO 18 is display R3.
 - RGB tearing fix: pass `bounce_buffer_size_px = LCD_WIDTH * 10` to `Arduino_ESP32RGBPanel`. Do not call `rgbpanel->getFrameBuffer()` after `gfx->begin()`.
 
+### M5Stack Core Basic / Gray — `m5stack_core_basic`
+- Display: **ILI9342C** IPS over 4-wire SPI (VSPI: SCLK=18, MOSI=23, MISO=19, CS=14, DC=27, RST=33), natively 320×240 landscape. Backlight is LEDC PWM on GPIO 32. `LCD_INVERT 1` for IPS panels — flip to 0 if an early TN unit shows inverted colours.
+- Touch: **none** (`touch.cpp` reports never-pressed). Splash ↔ usage is button-only.
+- I2C: SDA=21, SCL=22. **IP5306** @ 0x75: 4-step fuel gauge (0/25/50/75/100) + VIN/charge-full bits; `power_hal_init()` sets SYS_CTL0 bit1 so the boost doesn't auto-shut at light load. Power off is the IP5306's own double-press, not software.
+- Buttons (active LOW, external pull-ups, input-only pads): **A=GPIO 39** (primary → Space), **B=GPIO 38** (PWR role → cycle screens / hold-to-pair), **C=GPIO 37** (secondary → Shift+Tab) — mirrors the 2.16's left/middle/right.
+- Speaker: GPIO 25 → NS4148 amp. No codec, so `sound.cpp` plays a 3-note LEDC square-wave chime instead of the shared ES8311 engine; the pin is held LOW between chimes (`board_init()` does this first) to avoid amp hiss.
+- IMU: none on Basic; Gray's MPU6886 unused (fixed orientation).
+- Flash: `huge_app.csv` (3 MB app) so one binary fits both 4 MB and 16 MB units.
+
 ## Architecture
 
 ```text
@@ -91,6 +101,7 @@ firmware/src/
     waveshare_amoled_206/   — CO5300 + FT3168 + AXP PKEY, no IO expander, 32 MB, no rotation
     waveshare_lcd_154/      — ST7789 SPI TFT + CST816T + ADC battery (no PMU), PWM backlight
     waveshare_lcd_4/         — ST7701 RGB parallel + GT911 + expander backlight, no PMU/IMU
+    m5stack_core_basic/     — classic ESP32: ILI9342C SPI 320×240, no touch, IP5306, buttons A/B/C
     sim/                    — native desktop simulator: SDL2 + Arduino shims + scenario playback
     template/               — copy this to bootstrap a new port
   main.cpp                  — setup() + loop(): HAL calls only, zero #ifdef BOARD_*
@@ -121,6 +132,7 @@ pio run -d firmware -e waveshare_amoled_18_c6                                   
 pio run -d firmware -e waveshare_amoled_206                                     # build 2.06 (S3, watch)
 pio run -d firmware -e waveshare_lcd_154                                        # build 1.54 (S3, SPI TFT)
 pio run -d firmware -e waveshare_lcd_4                                           # build LCD-4 (S3, RGB TFT)
+pio run -d firmware -e m5stack_core_basic                                       # build M5Stack Core Basic/Gray (ESP32)
 pio run -d firmware -e waveshare_amoled_18 -t upload --upload-port /dev/cu.usbmodem101   # flash 1.8 on macOS
 pio run -d firmware -e waveshare_amoled_216 -t upload --upload-port /dev/ttyACM0         # flash 2.16 on Linux
 # C6 boards: same native USB-JTAG flashing; flag a chip mismatch ("This chip is ESP32-C6,

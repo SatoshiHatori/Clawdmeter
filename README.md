@@ -34,6 +34,7 @@ Boards supported out of the box:
 - [Waveshare ESP32-S3-Touch-AMOLED-2.06](https://www.waveshare.com/esp32-s3-touch-amoled-2.06.htm?&aff_id=149786)
 - [Waveshare ESP32-S3-Touch-LCD-1.54](https://www.waveshare.com/esp32-s3-lcd-1.54.htm?sku=33869&aff_id=149786)
 - [Waveshare ESP32-S3-Touch-LCD-4](https://www.waveshare.com/esp32-s3-touch-lcd-4.htm)
+- [M5Stack Core Basic / Gray](https://docs.m5stack.com/en/core/basic) (classic ESP32, no touch — buttons only; USB-UART, so pass the port explicitly, e.g. `./flash.sh m5stack_core_basic /dev/ttyUSB0`)
 
 > Please check if a pull request exists for your alternative hardware port before opening a new one, providing QA feedback and testing on the same hardware is more valuable than duplicate pull requests.
 
