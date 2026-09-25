@@ -75,9 +75,10 @@ ESP32-C6 sibling of the S3 1.8: same 368×448 SH8601 panel + FocalTech touch, di
 
 ### M5Stack Core Basic / Gray — `m5stack_core_basic`
 - Display: **ILI9342C** IPS over 4-wire SPI (VSPI: SCLK=18, MOSI=23, MISO=19, CS=14, DC=27, RST=33), natively 320×240 landscape. Backlight is LEDC PWM on GPIO 32. `LCD_INVERT 1` for IPS panels — flip to 0 if an early TN unit shows inverted colours.
-- Touch: **none** (`touch.cpp` reports never-pressed). Splash ↔ usage is button-only.
+- Touch: **none** (`touch.cpp` reports never-pressed, `BoardCaps.has_touch = false`). With no tap, `main.cpp` repurposes the PWR short-press to toggle splash ↔ usage (instead of cycling animations / brightness).
+- Orientation: `LCD_ROTATION 2` (180°) — rotation 0 renders upside down.
 - I2C: SDA=21, SCL=22. **IP5306** @ 0x75: 4-step fuel gauge (0/25/50/75/100) + VIN/charge-full bits; `power_hal_init()` sets SYS_CTL0 bit1 so the boost doesn't auto-shut at light load. Power off is the IP5306's own double-press, not software.
-- Buttons (active LOW, external pull-ups, input-only pads): **A=GPIO 39** (primary → Space), **B=GPIO 38** (PWR role → cycle screens / hold-to-pair), **C=GPIO 37** (secondary → Shift+Tab) — mirrors the 2.16's left/middle/right.
+- Buttons (active LOW, external pull-ups, input-only pads): **A=GPIO 39** (primary → Space), **B=GPIO 38** (PWR role → toggle splash/usage / hold-to-pair), **C=GPIO 37** (secondary → Shift+Tab) — mirrors the 2.16's left/middle/right.
 - Speaker: GPIO 25 → NS4148 amp. No codec, so `sound.cpp` plays a 3-note LEDC square-wave chime instead of the shared ES8311 engine; the pin is held LOW between chimes (`board_init()` does this first) to avoid amp hiss.
 - IMU: none on Basic; Gray's MPU6886 unused (fixed orientation).
 - Flash: `huge_app.csv` (3 MB app) so one binary fits both 4 MB and 16 MB units.

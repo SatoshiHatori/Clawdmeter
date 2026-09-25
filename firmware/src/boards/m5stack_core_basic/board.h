@@ -26,6 +26,9 @@
 // IPS panels (every Core Basic / Gray shipped since ~2019) need colour
 // inversion. Set to 0 if an early TN-panel unit shows inverted colours.
 #define LCD_INVERT           1
+// Arduino_GFX rotation (0..3, quarter turns). 2 = 180°: rotation 0 renders
+// upside down on the Core's panel mounting (user-reported on a Basic).
+#define LCD_ROTATION         2
 
 // ---- I2C bus (internal: IP5306, plus the IMU on the Gray) ----
 #define IIC_SDA              21

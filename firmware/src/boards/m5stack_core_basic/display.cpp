@@ -14,7 +14,7 @@ static Arduino_ILI9342* gfx = nullptr;
 void display_hal_init(void) {
     bus = new Arduino_ESP32SPI(LCD_DC, LCD_CS, LCD_SCLK, LCD_MOSI, LCD_MISO,
                                VSPI);
-    gfx = new Arduino_ILI9342(bus, LCD_RST, 0 /* rotation */, (bool)LCD_INVERT);
+    gfx = new Arduino_ILI9342(bus, LCD_RST, LCD_ROTATION, (bool)LCD_INVERT);
 }
 
 void display_hal_begin(void) {

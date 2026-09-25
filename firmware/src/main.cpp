@@ -344,8 +344,11 @@ void loop() {
             if (!idle_consume_wake_press()) {
                 // On splash: cycle animations. On the usage view: cycle
                 // screen brightness (single non-splash view, no more screens).
-                if (ui_get_current_screen() == SCREEN_SPLASH) splash_next();
-                else                                          brightness_cycle();
+                // Touchless boards can't tap to switch views, so PWR does
+                // that instead (animations still auto-rotate every 20 s).
+                if (!board_caps().has_touch)                       ui_toggle_splash();
+                else if (ui_get_current_screen() == SCREEN_SPLASH) splash_next();
+                else                                               brightness_cycle();
             }
         }
 
