@@ -26,6 +26,7 @@ POLL_INTERVAL_DEFAULT=$(poll_interval_default_from_env)
 POLL_INTERVAL=$POLL_INTERVAL_DEFAULT
 HEARTBEAT_INTERVAL_DEFAULT=60
 TICK=5
+RETRY_INTERVAL=30  # seconds before re-polling after a failed poll
 SAVED_MAC_FILE="$HOME/.config/claude-usage-monitor/ble-address"
 CONFIG_FILE="$HOME/.config/claude-usage-monitor/config"
 REFRESH_FLAG="/tmp/claude-usage-refresh-$$"
@@ -402,6 +403,16 @@ build_payload_for_token() {
         -d '{"model":"claude-haiku-4-5-20251001","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
         2>/dev/null) || return 1
 
+    # A failed request (expired/revoked token → 401, overload → 529, …) carries
+    # no unified rate-limit headers. Bail out here rather than falling through to
+    # the Enterprise branch below, which would send a bogus all-zero payload.
+    if ! echo "$headers" | grep -qi "^anthropic-ratelimit-unified-"; then
+        local http_code
+        http_code=$(echo "$headers" | grep -E '^HTTP/' | tail -1 | tr -d '\r' | awk '{print $2}')
+        log "API returned HTTP ${http_code:-none} with no rate-limit headers$([ "$http_code" = 401 ] && echo ' (token expired? run claude once to refresh it)')" >&2
+        return 1
+    fi
+
     local s5h_util overage_util overage_reset status
     s5h_util=$(echo "$headers" | grep -i "anthropic-ratelimit-unified-5h-utilization" | tr -d '\r' | awk '{print $2}')
     overage_util=$(echo "$headers" | grep -i "anthropic-ratelimit-unified-overage-utilization" | tr -d '\r' | awk '{print $2}')
@@ -451,18 +462,19 @@ period_len = reset_ts - dt_start.timestamp()
 tp = max(0, min(100, int(round((now - dt_start.timestamp()) / period_len * 100)))) if period_len > 0 else 0
 pd_days = int(round(period_len / 86400))
 rd = f"{dt_end.strftime('%b')} {dt_end.day}"
-print(json.dumps({"tp": tp, "pd": pd_days, "rd": rd}))
+print(f"{tp}\t{pd_days}\t{rd}")
 PYEOF
 )
-        payload=$(awk -v ou="$overage_util" -v or_="$overage_reset" -v st="$status" -v now="$now" -v pi="$period_info" -v clk="$clock_fragment" -v chm="$chime_fragment" \
+        # Tab-separated tp/pd/rd, parsed in bash: gawk's 3-arg match() is a
+        # syntax error on mawk (Debian/Ubuntu's default awk).
+        local tp pd rd
+        IFS=$'\t' read -r tp pd rd <<< "$period_info"
+        [[ "$tp" =~ ^[0-9]+$ ]] || tp=0
+        [[ "$pd" =~ ^[0-9]+$ ]] || pd=30
+        payload=$(awk -v ou="$overage_util" -v or_="$overage_reset" -v st="$status" -v now="$now" -v tp="$tp" -v pd="$pd" -v rd="$rd" -v clk="$clock_fragment" -v chm="$chime_fragment" \
             'BEGIN {
                 sp = sprintf("%.0f", ou * 100);
                 sr = (or_ - now) / 60; sr = sr > 0 ? sprintf("%.0f", sr) : 0;
-                # Extract tp, pd, rd from period_info JSON (simple regex)
-                tp = 0; pd = 30; rd = "";
-                match(pi, /"tp": *([0-9]+)/, a); if (RSTART) tp = a[1];
-                match(pi, /"pd": *([0-9]+)/, b); if (RSTART) pd = b[1];
-                match(pi, /"rd": *"([^"]+)"/, c); if (RSTART) rd = c[1];
                 printf "{\"s\":%s,\"sr\":%s,\"w\":0,\"wr\":0,\"st\":\"%s\",\"acct\":\"ent\",\"tp\":%s,\"pd\":%s,\"rd\":\"%s\"%s%s,\"ok\":true}", sp, sr, st, tp, pd, rd, clk, chm;
             }')
     fi
@@ -609,7 +621,13 @@ while true; do
                 log "Refresh requested by device"
                 rm -f "$REFRESH_FLAG"
             fi
-            poll && LAST_POLL=$NOW
+            # On failure, retry in RETRY_INTERVAL rather than on every tick —
+            # an expired token would otherwise hit the API every 5s.
+            if poll; then
+                LAST_POLL=$NOW
+            else
+                LAST_POLL=$(( NOW - POLL_INTERVAL + RETRY_INTERVAL ))
+            fi
         elif (( HEARTBEAT_INTERVAL < POLL_INTERVAL && NOW - LAST_WRITE_TS >= HEARTBEAT_INTERVAL )); then
             heartbeat
         fi
